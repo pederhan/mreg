@@ -20,10 +20,18 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.http import HttpResponse
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from mreg.__about__ import __version__ as mreg_version
 from mreg.api.permissions import IsSuperOrNetworkAdminMember
+from mreg.api.serializers import (
+    HealthHeartbeatSerializer,
+    MetaVersionsSerializer,
+    MregVersionSerializer,
+    REPORTED_LIBRARY_VERSION_FIELDS,
+    UserInfoSerializer,
+)
 from mreg.models.auth import User
 from mreg.models.base import ExpiringToken
 from mreg.models.network import NetGroupRegexPermission
@@ -80,26 +88,16 @@ LDAP_CALL_FAILURES = Counter(
     ["operation", "exception"],
 )
 
-# Note the order here. This order is preserved in the response.
-# Also, we add libpq-data to the end of this list so letting psycopg
-# be last makes the context of the libpq version more clear.
-LIBRARIES_TO_REPORT = [
-    "djangorestframework",
-    "django-auth-ldap",
-    "django-filter", 
-    "django-logging-json",
-    "django-netfields",
-    "drf-standardized-errors",
-    "gunicorn", 
-    "sentry-sdk",
-    "structlog",
-    "rich",
-    "psycopg",
-]
+PROMETHEUS_METRICS_TEXT_SCHEMA = {
+    "type": "string",
+    "description": "Prometheus exposition text format.",
+    "example": "# HELP mreg_http_requests_total Total HTTP requests.\n# TYPE mreg_http_requests_total counter\n",
+}
 
 
 class ObtainExpiringAuthToken(ObtainAuthToken):
 
+    @extend_schema(auth=[])
     def post(self, request: Request, *args: Any, **kwargs: Any):
         serializer = self.serializer_class(data=request.data, context={"request": request})
         try:
@@ -142,6 +140,7 @@ class TokenLogout(APIView):
 
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(request=None, responses={status.HTTP_200_OK: None})
     def post(self, request: Request):
         # delete the user on logout to clean up the local user database and
         # group memberships. As the user owns the token, it will also be deleted.
@@ -152,6 +151,7 @@ class TokenIsValid(APIView):
 
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(responses={status.HTTP_200_OK: None})
     def get(self, request: Request):
         return Response(status=status.HTTP_200_OK)  
 
@@ -163,6 +163,18 @@ class UserInfo(APIView):
 
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "username",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Username to inspect. Requires administrative privileges when querying another user.",
+            )
+        ],
+        responses={status.HTTP_200_OK: UserInfoSerializer},
+    )
     def get(self, request: Request):
         # Identify the requesting user
         req_user = User.from_request(request)
@@ -235,6 +247,7 @@ class MregVersion(APIView):
     
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(responses={status.HTTP_200_OK: MregVersionSerializer})
     def get(self, request: Request):
         data = {
             "version": mreg_version,
@@ -245,13 +258,14 @@ class MetaVersions(APIView):
 
     permission_classes = (IsSuperOrNetworkAdminMember,)
 
+    @extend_schema(responses={status.HTTP_200_OK: MetaVersionsSerializer})
     def get(self, request: Request):
         data = {
             "python": platform.python_version(),
             "django": django.get_version(),
         }
 
-        for library in LIBRARIES_TO_REPORT:
+        for library in REPORTED_LIBRARY_VERSION_FIELDS:
             try:
                 data[library] = version(library)
             except Exception as e:
@@ -263,6 +277,7 @@ class MetaVersions(APIView):
 
 
 class HealthHeartbeat(APIView):
+    @extend_schema(responses={status.HTTP_200_OK: HealthHeartbeatSerializer})
     def get(self, request: Request):
         uptime = int(time.time() - start_time)
         data = {
@@ -273,6 +288,12 @@ class HealthHeartbeat(APIView):
 
 
 class HealthLDAP(APIView):
+    @extend_schema(
+        responses={
+            status.HTTP_200_OK: None,
+            status.HTTP_503_SERVICE_UNAVAILABLE: None,
+        }
+    )
     def get(self, request: Request) -> Response:
         ok = self.check_ldap_connection()
         st = status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE
@@ -321,5 +342,9 @@ class MetricsView(APIView):
 
     permission_classes = ()
 
+    @extend_schema(
+        auth=[],
+        responses={(status.HTTP_200_OK, "text/plain"): PROMETHEUS_METRICS_TEXT_SCHEMA},
+    )
     def get(self, request: Request):
         return HttpResponse(generate_latest(), content_type=CONTENT_TYPE_LATEST)
