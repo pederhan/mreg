@@ -616,7 +616,15 @@ class NetGroupRegexPermissionSerializer(ValidationMixin, serializers.ModelSerial
 
     class Meta:
         model = NetGroupRegexPermission
-        fields = '__all__'
+        fields = (
+            'id',
+            'created_at',
+            'updated_at',
+            'group',
+            'range',
+            'regex',
+            'labels',
+        )
 
 
 class BaseZoneSerializer(ValidationMixin, serializers.ModelSerializer):
@@ -865,4 +873,20 @@ class NetworkSerializer(ValidationMixin, serializers.ModelSerializer):
 
     class Meta:
         model = Network
-        fields = '__all__'
+        fields = (
+            'id',
+            'excluded_ranges',
+            'policy',
+            'communities',
+            'created_at',
+            'updated_at',
+            'network',
+            'description',
+            'vlan',
+            'dns_delegated',
+            'category',
+            'location',
+            'frozen',
+            'reserved',
+            'max_communities',
+        )

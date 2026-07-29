@@ -89,6 +89,8 @@ jobs:
         git -c advice.detachedHead=false checkout $C
         cp --no-clobber /tmp/ci/* ci/
     - name: Run the tests
+      env:
+        MREG_IMAGE: ghcr.io/unioslo/mreg:latest
       run: mreg-cli/ci/run_testsuite_and_record_V2.sh
     - name: Comment on the commit that the tests worked
       run: |
