@@ -73,9 +73,9 @@ jobs:
     - name: Load container image
       run: docker load --input mreg.tgz
     - name: Tag container image
-      # There's a docker-compose.yml file in the mreg-cli repo that wants the image from ghcr.io,
-      # but we want to use the newly built custom image
-      run: docker tag mreg ghcr.io/unioslo/mreg:latest
+      # Ensure we have a unique tag for this commit's image, so that
+      # we can pass it to mreg-cli for testing.
+      run: docker tag mreg mreg:${{ github.sha }}
     - name: Checkout
       uses: actions/checkout@v6
     - name: Download mreg-cli
@@ -90,7 +90,7 @@ jobs:
         cp --no-clobber /tmp/ci/* ci/
     - name: Run the tests
       env:
-        MREG_IMAGE: ghcr.io/unioslo/mreg:latest
+        MREG_IMAGE: mreg:${{ github.sha }}
       run: mreg-cli/ci/run_testsuite_and_record_V2.sh
     - name: Comment on the commit that the tests worked
       run: |
