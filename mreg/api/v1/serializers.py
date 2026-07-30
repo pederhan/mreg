@@ -30,6 +30,10 @@ class ValidationMixin:
         return data
 
 
+class ErrorResponseSerializer(serializers.Serializer):
+    error = serializers.CharField(required=False)
+
+
 class CommunitySerializer(serializers.ModelSerializer):
 
     # Members are all the hosts that have this community assigned.
@@ -40,10 +44,10 @@ class CommunitySerializer(serializers.ModelSerializer):
     def get_network_cidr(self, obj) -> str:
         return str(obj.network.network)
 
-    def get_hosts(self, obj):
+    def get_hosts(self, obj) -> list[str]:
         return list(obj.hosts.values_list("name", flat=True))
 
-    def get_global_name(self, obj):
+    def get_global_name(self, obj) -> str | None:
         # Only map if the setting is enabled.
         if not getattr(settings, "MREG_MAP_GLOBAL_COMMUNITY_NAMES", False):
             return None
@@ -254,6 +258,8 @@ class HistorySerializer(serializers.ModelSerializer):
 
 
 class BACnetIDSerializer(serializers.ModelSerializer):
+    hostname = serializers.CharField(read_only=True)
+
     class Meta:
         model = BACnetID
         fields = ('id', 'host', 'hostname',)
@@ -271,6 +277,32 @@ class HostContactSerializer(serializers.ModelSerializer):
         model = HostContact
         fields = ('id', 'email', 'created_at', 'updated_at')
         read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+class HostContactMutationSerializer(serializers.Serializer):
+    emails = serializers.ListField(child=serializers.EmailField(), required=False)
+
+
+class HostContactMutationResponseSerializer(serializers.Serializer):
+    added = serializers.ListField(child=serializers.EmailField(), required=False)
+    already_exists = serializers.ListField(child=serializers.EmailField(), required=False)
+    removed = serializers.ListField(child=serializers.EmailField(), required=False)
+    not_found = serializers.ListField(child=serializers.EmailField(), required=False)
+    error = serializers.CharField(required=False)
+
+
+class DhcpHostSerializer(serializers.Serializer):
+    host__name = serializers.CharField()
+    ipaddress = serializers.IPAddressField()
+    macaddress = serializers.CharField()
+    host__zone__name = serializers.CharField(allow_null=True, required=False)
+
+
+class DhcpV6HostByV4Serializer(serializers.Serializer):
+    host__name = serializers.CharField()
+    host__zone__name = serializers.CharField(allow_null=True, required=False)
+    ipaddress = serializers.IPAddressField(protocol="IPv6")
+    macaddress = serializers.CharField()
 
 
 class HostCommunityMappingSerializer(serializers.ModelSerializer):
@@ -584,9 +616,19 @@ class NetworkExcludedRangeSerializer(ValidationMixin, serializers.ModelSerialize
 
 
 class NetGroupRegexPermissionSerializer(ValidationMixin, serializers.ModelSerializer):
+    range = serializers.CharField()
+
     class Meta:
         model = NetGroupRegexPermission
-        fields = '__all__'
+        fields = (
+            'id',
+            'created_at',
+            'updated_at',
+            'group',
+            'range',
+            'regex',
+            'labels',
+        )
 
 
 class BaseZoneSerializer(ValidationMixin, serializers.ModelSerializer):
@@ -644,6 +686,11 @@ class ReverseZoneDelegationSerializer(BaseZoneDelegationSerializer):
 
     class Meta(BaseZoneSerializer.Meta):
         model = ReverseZoneDelegation
+
+
+class ForwardZoneByHostnameSerializer(serializers.Serializer):
+    zone = ForwardZoneSerializer(required=False)
+    delegation = ForwardZoneDelegationSerializer(required=False)
 
 
 class GroupSerializer(serializers.ModelSerializer):
@@ -821,6 +868,7 @@ class NetworkPolicyAttributeSerializer(serializers.ModelSerializer):
 
 
 class NetworkSerializer(ValidationMixin, serializers.ModelSerializer):
+    network = serializers.CharField()
     excluded_ranges = NetworkExcludedRangeSerializer(many=True, read_only=True)
     
     # Expand the entire policy object
@@ -829,5 +877,20 @@ class NetworkSerializer(ValidationMixin, serializers.ModelSerializer):
 
     class Meta:
         model = Network
-        fields = '__all__'
-
+        fields = (
+            'id',
+            'excluded_ranges',
+            'policy',
+            'communities',
+            'created_at',
+            'updated_at',
+            'network',
+            'description',
+            'vlan',
+            'dns_delegated',
+            'category',
+            'location',
+            'frozen',
+            'reserved',
+            'max_communities',
+        )
